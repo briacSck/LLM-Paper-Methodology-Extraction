@@ -205,4 +205,3 @@ python-dotenv>=1.0.0
 *Pipeline developed for academic research purposes. All LLM calls use
 temperature=0 for deterministic extraction. Results should be validated against
 human coding for a random subsample before use in publication.*
-```
