@@ -71,7 +71,7 @@ def main() -> None:
     logger.info("=== Phase 2: Classification ===")
     classify_all_papers(
         parsed_dir=config.PARSED_DIR,
-        extractions_dir=config.EXTRACTIONS_DIR,
+        output_dir=config.EXTRACTIONS_DIR,
         api_key=config.ANTHROPIC_API_KEY,
     )
 
@@ -94,7 +94,7 @@ def main() -> None:
         output_dir=config.OUTPUT_DIR,
     )
     generate_review_queue(
-        qc_results=qc_results,
+        all_qc_results=qc_results,
         extractions_dir=config.EXTRACTIONS_DIR,
         output_dir=config.OUTPUT_DIR,
     )

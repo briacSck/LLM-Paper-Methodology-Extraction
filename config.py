@@ -35,7 +35,7 @@ OUTPUT_DIR: Path = Path(os.environ.get("OUTPUT_DIR", "./data/output/"))
 # Model
 # ---------------------------------------------------------------------------
 
-CLAUDE_MODEL: str = os.environ.get("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+CLAUDE_MODEL: str = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
 
 # ---------------------------------------------------------------------------
 # Ensure data directories exist at import time

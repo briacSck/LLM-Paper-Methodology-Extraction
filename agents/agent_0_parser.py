@@ -480,6 +480,8 @@ def parse_all_pdfs(
 ) -> list[ParsedPaper]:
     """Parse every PDF in *papers_dir* and return all :class:`ParsedPaper` objects.
 
+    Skips PDFs that already have a cached JSON in *output_dir*.
+
     Args:
         papers_dir: Folder containing PDF files.  Defaults to
             ``config.PAPERS_DIR``.
@@ -491,7 +493,10 @@ def parse_all_pdfs(
     """
     if papers_dir is None:
         papers_dir = config.PAPERS_DIR
+    if output_dir is None:
+        output_dir = config.PARSED_DIR
     papers_dir = Path(papers_dir)
+    output_dir = Path(output_dir)
 
     pdf_files = sorted(papers_dir.glob("*.pdf"))
     if not pdf_files:
@@ -501,7 +506,19 @@ def parse_all_pdfs(
     logger.info("Found %d PDF(s) in %s", len(pdf_files), papers_dir)
     results: list[ParsedPaper] = []
     for pdf in pdf_files:
+        paper_id = pdf.stem
+        cache_path = output_dir / f"{paper_id}.json"
+        if cache_path.exists():
+            logger.info("Cache hit for %s — skipping re-parse.", paper_id)
+            try:
+                results.append(ParsedPaper.load(cache_path))
+                continue
+            except Exception as exc:
+                logger.warning(
+                    "Failed to load cache for %s (%s); re-parsing.", paper_id, exc
+                )
         logger.info("Parsing %s …", pdf.name)
         results.append(parse_pdf(pdf, output_dir=output_dir))
 
     return results
+
