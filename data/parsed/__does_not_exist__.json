@@ -1,0 +1,16 @@
+{
+  "paper_id": "__does_not_exist__",
+  "title": "",
+  "authors": "",
+  "abstract": "",
+  "theory_hypotheses": "",
+  "methods_data": "",
+  "results": "",
+  "discussion": "",
+  "footnotes": "",
+  "appendix": "",
+  "full_text": "",
+  "page_count": 0,
+  "parse_quality": "low",
+  "parse_notes": "Text extraction failed: Both pdfplumber and PyMuPDF failed for __does_not_exist__.pdf. Primary: [Errno 2] No such file or directory: 'C:\\\\Users\\\\briac\\\\Econ_Code\\\\LLM_Paper_Methodology_Extraction\\\\paper-extraction-pipeline\\\\data\\\\papers\\\\__does_not_exist__.pdf'. Fallback: DLL load failed while importing _extra: The specified module could not be found.."
+}
