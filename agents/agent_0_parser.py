@@ -372,7 +372,8 @@ def parse_pdf(pdf_path: Path | str, output_dir: Optional[Path] = None) -> Parsed
     if output_dir is None:
         output_dir = config.PARSED_DIR
 
-    paper_id = pdf_path.stem  # filename without extension
+    stem = pdf_path.stem
+    paper_id = stem.split(" - ")[0].strip() if " - " in stem else stem
 
     # ------------------------------------------------------------------
     # Minimal "error" paper returned on catastrophic failure.
@@ -506,7 +507,8 @@ def parse_all_pdfs(
     logger.info("Found %d PDF(s) in %s", len(pdf_files), papers_dir)
     results: list[ParsedPaper] = []
     for pdf in pdf_files:
-        paper_id = pdf.stem
+        stem = pdf.stem
+        paper_id = stem.split(" - ")[0].strip() if " - " in stem else stem
         cache_path = output_dir / f"{paper_id}.json"
         if cache_path.exists():
             logger.info("Cache hit for %s — skipping re-parse.", paper_id)

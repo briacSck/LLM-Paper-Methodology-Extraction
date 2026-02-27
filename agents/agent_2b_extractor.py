@@ -821,12 +821,12 @@ def extract_all_papers(
     results: list[dict] = []
 
     for jf in json_files:
-        paper_id = jf.stem
+        paperid = jf.stem.split(" - ")[0].strip()
 
         # Check classification exists.
-        cls_path = extractions_dir / f"{paper_id}_classification.json"
+        cls_path = extractions_dir / f"{paperid}_classification.json"
         if not cls_path.exists():
-            logger.info("No classification for %s — skipping.", paper_id)
+            logger.info("No classification for %s — skipping.", paperid)
             continue
 
         # Load classification.
@@ -835,14 +835,14 @@ def extract_all_papers(
             cls_result = ClassificationResult.load(cls_path)
         except Exception as exc:
             cls_exc = str(exc)
-            logger.error("Cannot load classification for %s: %s", paper_id, cls_exc)
+            logger.error("Cannot load classification for %s: %s", paperid, cls_exc)
             continue
 
         # Check eligibility.
         if cls_result.Classification_Code not in eligible_codes:
             logger.info(
                 "Skipping %s — Classification_Code=%s not in eligible_codes=%s.",
-                paper_id, cls_result.Classification_Code, eligible_codes,
+                paperid, cls_result.Classification_Code, eligible_codes,
             )
             continue
 
