@@ -500,7 +500,7 @@ def _run_b_call(
       - "FLAG-API-ERROR-{call_name}" for other API failures
     """
     # Attempt 1
-    raw_text, _, _, _, _, exc1 = _call_llm(client, system, user_msg, 2048, paper_id, call_name)
+    raw_text, _, _, _, exc1 = _call_llm(client, system, user_msg, 2048, paper_id, call_name)
 
     # If API failed (no text), handle rate limit vs other
     if raw_text is None:
@@ -510,7 +510,7 @@ def _run_b_call(
         else:
             logger.warning("API failure on %s for %s; retrying once.", call_name, paper_id)
 
-        raw_text2, _, _, _, _, exc2 = _call_llm(
+        raw_text2, _, _, _, exc2 = _call_llm(
             client, system, user_msg, 2048, paper_id, f"{call_name}-retry"
         )
 
@@ -534,7 +534,7 @@ def _run_b_call(
 
     # Retry once with JSON reminder
     retry_msg = "Your previous response was not valid JSON. Return JSON only:\n\n" + user_msg
-    raw_text2, _, _, _, _, exc2 = _call_llm(
+    raw_text2, _, _, _, exc2 = _call_llm(
         client, system, retry_msg, 2048, paper_id, f"{call_name}-retry"
     )
 
