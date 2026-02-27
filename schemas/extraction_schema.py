@@ -207,8 +207,25 @@ class ExtractionResult(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _enforce_missing_consistency(cls, data: dict) -> dict:
-        """Force dependent missing-data fields to 'NA' when Missing_Mentioned == '0'."""
+        """Force dependent missing-data fields to 'NA' when Missing_Mentioned == '0'.
+
+        Also appends FLAG-QC-MISSING-LOGIC to Extraction_Flags when a dependent
+        field has a non-null, non-NA value despite Missing_Mentioned being '0'.
+        """
         if isinstance(data, dict) and str(data.get("Missing_Mentioned", "")) == "0":
+            # Detect inconsistency before correction.
+            inconsistent = any(
+                data.get(dep) not in (None, "NA", "NR", "")
+                for dep in _MISSING_DEPENDENTS
+            )
+            if inconsistent:
+                flag = "FLAG-QC-MISSING-LOGIC"
+                existing = str(data.get("Extraction_Flags", "") or "")
+                if flag not in existing:
+                    data["Extraction_Flags"] = (
+                        f"{existing} {flag}".strip() if existing else flag
+                    )
+            # Always correct dependents.
             for dep in _MISSING_DEPENDENTS:
                 data[dep] = "NA"
         return data
