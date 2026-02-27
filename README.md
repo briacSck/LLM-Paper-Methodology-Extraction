@@ -17,31 +17,116 @@ Excel output.
 
 ---
 
+## Results — 50-Paper Sample
+
+Pipeline executed on the full 50-paper sample (February 2026, SMJ corpus).
+All statistics below are drawn from `data/output/extraction_output.xlsx`.
+
+---
+
+### Classification Breakdown
+
+| Category | Label | Count | % of Sample |
+|----------|-------|-------|-------------|
+| **EQR** | Empirical Quantitative – Regression | **27** | **54.0%** |
+| CT | Conceptual / Theoretical | 10 | 20.0% |
+| MM | Mixed Methods | 7 | 14.0% |
+| EQL | Empirical Qualitative | 2 | 4.0% |
+| EQNR-Other | Quantitative, non-regression | 2 | 4.0% |
+| EQNR-ML | ML-focused | 1 | 2.0% |
+| MA | Meta-Analysis | 1 | 2.0% |
+
+→ **27 papers eligible for full variable extraction (EQR).**
+
+---
+
+### Missing Data Handling (EQR papers, n = 27)
+
+| Dimension | n | % of EQR |
+|-----------|---|----------|
+| Missing data mentioned in any form | 10 | 37.0% |
+| Missing data **not** mentioned | 13 | 48.1% |
+| Missing rate explicitly reported | 1 | 3.7% |
+| Method justified by authors | 1 | 3.7% |
+| Missing pattern tested (MCAR/MAR/MNAR) | **0** | **0.0%** |
+| Sensitivity analysis on missing data | 1 | 3.7% |
+
+**Handling methods identified:**
+
+| Method | Count | % of EQR |
+|--------|-------|----------|
+| Unknown / not reported | 17 | 63.0% |
+| Listwise deletion | 6 | 22.2% |
+| Other | 4 | 14.8% |
+| Multiple imputation (MI) | 0 | 0.0% |
+| Full information maximum likelihood (FIML) | 0 | 0.0% |
+
+> Key finding: **63% of EQR papers provide no identifiable missing data handling method.
+> 0% test for missing data patterns. Neither MI nor FIML was used in any paper.**
+
+---
+
+### Model Types (EQR papers, n = 27)
+
+| Model | Count | % of EQR |
+|-------|-------|----------|
+| Tobit / fixed-effects panel | 16 | 59.3% |
+| Unknown | 4 | 14.8% |
+| Survival analysis | 2 | 7.4% |
+| Factor analysis / SEM | 2 | 7.4% |
+| OLS / Linear | 2 | 7.4% |
+| Logit / Probit | 1 | 3.7% |
+
+---
+
+### Reporting Transparency (EQR papers, n = 27)
+
+| Indicator | Yes | % | No | % |
+|-----------|-----|---|----|---|
+| Software reported | 7 | 25.9% | 16 | 59.3% |
+| Code available | 5 | 18.5% | 18 | 66.7% |
+| Replication feasible | 3 | 11.1% | — | — |
+
+---
+
+### Pipeline Performance
+
+- **Papers processed**: 50 / 50
+- **Auto-classification success**: 100%
+- **Full extraction completed**: 27 EQR papers
+- **Human review queue**: papers flagged with `FLAG-ML-UPSTREAM`, `FLAG-MULTISTUDY`, `FLAG-MISSING-AMBIGUOUS`, `FLAG-CLASSIFICATION-UNSTABLE`
+
+---
+
 ## Repository Structure
 
 ```
 LLM-Paper-Methodology-Extraction/
-├── main.py # End-to-end pipeline runner
-├── config.py # Environment and path configuration
+├── main.py                      # End-to-end pipeline runner
+├── config.py                    # Environment and path configuration
 ├── requirements.txt
 ├── .gitignore
 ├── agents/
-│ ├── agent_0_parser.py # Phase 1 - PDF parsing + section splitting
-│ ├── agent_1_classifier.py # Phase 2 - 7-category classification
-│ ├── agent_2b_extractor.py # Phase 3 - 65-variable extraction (4 grouped LLM calls)
-│ ├── agent_3_qc.py # Phase 4 - QC rules, auto-correction, human-in-the-loop
-│ └── agent_4_exporter.py # Phase 5 - Excel output + summary report
+│   ├── agent_0_parser.py        # Phase 1 — PDF parsing + section splitting
+│   ├── agent_1_classifier.py    # Phase 2 — 7-category classification
+│   ├── agent_2b_extractor.py    # Phase 3 — 65-variable extraction (4 grouped LLM calls)
+│   ├── agent_3_qc.py            # Phase 4 — QC rules, auto-correction, human-in-the-loop
+│   └── agent_4_exporter.py      # Phase 5 — Excel output + summary report
 ├── schemas/
-│ ├── parsed_paper.py # ParsedPaper dataclass
-│ ├── extraction_schema.py # 65-variable extraction schema
-│ └── qc_schema.py # QCResult dataclass
+│   ├── parsed_paper.py          # ParsedPaper dataclass
+│   ├── extraction_schema.py     # 65-variable extraction schema + QC flag injection
+│   └── qc_schema.py             # QCResult dataclass
 ├── data/
-│ ├── papers/ # Drop PDFs here (0001.pdf … 0050.pdf) - not tracked
-│ ├── parsed/ # Intermediate JSON per paper - not tracked
-│ ├── extractions/ # Per-paper classification + extraction JSON - not tracked
-│ └── output/ # Final deliverables - not tracked
+│   ├── papers/                  # Drop PDFs here (0001.pdf … 0050.pdf) — not tracked
+│   ├── parsed/                  # Intermediate JSON per paper — not tracked
+│   ├── extractions/             # Per-paper classification + extraction JSON — not tracked
+│   └── output/                  # Final deliverables — not tracked
 └── tests/
-└── test_parser.py
+    ├── test_parser.py           # Integration test — PDF parsing (requires real PDFs)
+    ├── test_classifier.py       # Unit tests — classify_paper() (fully offline, mocked)
+    ├── test_extractor.py        # Unit tests — ExtractionResult schema (no LLM calls)
+    └── fixtures/
+        └── mock_paper.json      # Fictional parsed paper for offline testing
 ```
 
 ---
