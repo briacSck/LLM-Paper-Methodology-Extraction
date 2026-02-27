@@ -1,11 +1,3 @@
-"""
-Central configuration for the paper-extraction pipeline.
-
-All settings are read from environment variables (loaded from .env by
-python-dotenv).  Import this module early in any entry-point so that every
-subsequent import sees the populated environment.
-"""
-
 import os
 from pathlib import Path
 
@@ -20,7 +12,6 @@ load_dotenv(_PROJECT_ROOT / ".env", override=False)
 # ---------------------------------------------------------------------------
 
 ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")
-OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")  # optional
 
 # ---------------------------------------------------------------------------
 # Data directories

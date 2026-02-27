@@ -1,6 +1,6 @@
-# Paper Extraction Pipeline
+# LLM-Paper-Methodology-Extraction
 ### Automated Variable Extraction for Regression-Based Papers
-**Missing Data Handling Practices in Management Journals**
+**Missing Data Handling Practices in Management Journals** — Oxford RA Screening Task
 
 ---
 
@@ -12,8 +12,7 @@ JOM). It implements a 7-category classification framework to identify
 regression-based empirical papers (EQR), then extracts 65 variables across 11
 analytical categories (with a primary focus on missing data handling practices).
 
-Built as a 5-phase agentic pipeline using Claude & GPT (Anthropic & OpenAI) for LLM-based
-extraction, pdfplumber/PyMuPDF for PDF parsing, and openpyxl for structured
+Built as a 5-phase agentic pipeline using **Claude (Anthropic)** for LLM-based extraction, **pdfplumber/PyMuPDF** for PDF parsing, and **openpyxl** for structured
 Excel output.
 
 ---
@@ -21,29 +20,28 @@ Excel output.
 ## Repository Structure
 
 ```
-paper-extraction-pipeline/
-├── main.py                      # End-to-end pipeline runner
-├── config.py                    # Environment and path configuration
+LLM-Paper-Methodology-Extraction/
+├── main.py # End-to-end pipeline runner
+├── config.py # Environment and path configuration
 ├── requirements.txt
-├── .env.example
+├── .gitignore
 ├── agents/
-│   ├── agent_0_parser.py        # Phase 1 — PDF parsing + section splitting
-│   ├── agent_1_classifier.py    # Phase 2 — 7-category classification (EQR/EQNR-ML/CT/...)
-│   ├── agent_2b_extractor.py    # Phase 3 — 65-variable extraction (4 grouped LLM calls)
-│   ├── agent_3_qc.py            # Phase 4 — QC rules, auto-correction, human-in-the-loop review queue
-│   └── agent_4_exporter.py      # Phase 5 — Excel output + summary report
+│ ├── agent_0_parser.py # Phase 1 - PDF parsing + section splitting
+│ ├── agent_1_classifier.py # Phase 2 - 7-category classification
+│ ├── agent_2b_extractor.py # Phase 3 - 65-variable extraction (4 grouped LLM calls)
+│ ├── agent_3_qc.py # Phase 4 - QC rules, auto-correction, human-in-the-loop
+│ └── agent_4_exporter.py # Phase 5 - Excel output + summary report
 ├── schemas/
-│   ├── parsed_paper.py          # ParsedPaper dataclass
-│   ├── extraction_schema.py     # 65-variable extraction schema
-│   └── qc_schema.py             # QCResult dataclass
-├── prompts/                     # LLM system prompts (per agent)
+│ ├── parsed_paper.py # ParsedPaper dataclass
+│ ├── extraction_schema.py # 65-variable extraction schema
+│ └── qc_schema.py # QCResult dataclass
 ├── data/
-│   ├── papers/                  # Drop PDFs here (0001.pdf … 0050.pdf)
-│   ├── parsed/                  # (Intermediate Step) JSON per paper
-│   ├── extractions/             # Per-paper classification + extraction JSON
-│   └── output/                  # Final deliverables
+│ ├── papers/ # Drop PDFs here (0001.pdf … 0050.pdf) - not tracked
+│ ├── parsed/ # Intermediate JSON per paper - not tracked
+│ ├── extractions/ # Per-paper classification + extraction JSON - not tracked
+│ └── output/ # Final deliverables - not tracked
 └── tests/
-    └── test_parser.py
+└── test_parser.py
 ```
 
 ---
@@ -78,18 +76,26 @@ Papers are classified into 7 mutually exclusive categories before extraction:
 
 ### Prerequisites
 - Python 3.11+
-- Anthropic API key
-- OpenAI API key
+- Anthropic API (`ANTHROPIC_API_KEY`)
 
 ### Installation
 
 ```bash
-git clone https://github.com/your-org/paper-extraction-pipeline
-cd paper-extraction-pipeline
+git clone https://github.com/briacSck/LLM-Paper-Methodology-Extraction
+cd LLM-Paper-Methodology-Extraction
 python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env
-# Add your ANTHROPIC_API_KEY to .env
+```
+
+### Create a `.env` file at the root:
+
+```text
+ANTHROPIC_API_KEY=sk-ant-...
+CLAUDE_MODEL=claude-3-5-sonnet-20241022
+PAPERS_DIR=./data/papers/
+PARSED_DIR=./data/parsed/
+EXTRACTIONS_DIR=./data/extractions/
+OUTPUT_DIR=./data/output/
 ```
 
 ### Add Papers
@@ -127,6 +133,18 @@ python tests/test_parser.py
 
 ---
 
+## Pipeline Phases
+
+| Phase | Agent | Input | Output | Verify |
+|-------|-------|-------|--------|--------|
+| 1 | `agent_0_parser` | PDFs | `parsed/*.json` | `test_parser.py` |
+| 2 | `agent_1_classifier` | Parsed JSON | `*_classification.json` | 3+ classifications |
+| 3 | `agent_2b_extractor` | Parsed + Classification | `*_extraction.json` | Missing_Handling values |
+| 4 | `agent_3_qc` | Extraction JSON | QC results + review queue | `human_review_queue.xlsx` |
+| 5 | `agent_4_exporter` | All JSON + reviewed queue | `extraction_output.xlsx` | 3-sheet Excel |
+
+---
+
 ## Extraction Schema (Summary)
 
 65 variables across 11 categories:
@@ -154,25 +172,21 @@ human-the-loop review queue. Key flags:
 
 | Flag | Trigger |
 |------|---------|
-| `[FLAG-MULTISTUDY]` | 2+ distinct empirical studies in one paper |
-| `[FLAG-ML-UPSTREAM]` | ML constructs IV/DV — verify regression is the hypothesis test |
-| `[FLAG-MISSING-AMBIGUOUS]` | Missing data handling inferred, not stated |
-| `[FLAG-CLASSIFICATION-UNSTABLE]` | Two LLM classification runs disagree |
-| `[FLAG-LPM]` | Binary DV with OLS (linear probability model) |
-| `[FLAG-QC-MISSING-LOGIC]` | Missing_Mentioned=0 but sub-fields are not NA |
+| `FLAG-MULTISTUDY` | 2+ distinct empirical studies in one paper |
+| `FLAG-ML-UPSTREAM` | ML constructs IV/DV — verify regression is the hypothesis test |
+| `FLAG-MISSING-AMBIGUOUS` | Missing data handling inferred, not stated |
+| `FLAG-CLASSIFICATION-UNSTABLE` | Two LLM classification runs disagree |
+| `FLAG-LPM` | Binary DV with OLS (linear probability model) |
+| `FLAG-QC-MISSING-LOGIC` | Missing_Mentioned=0 but sub-fields are not NA |
 
 ---
 
-## Environment Variables
+## Rate Limiting & Reliability
 
-```env
-ANTHROPIC_API_KEY=sk-ant-...
-CLAUDE_MODEL=claude-3-5-sonnet-20241022
-PAPERS_DIR=./data/papers/
-PARSED_DIR=./data/parsed/
-EXTRACTIONS_DIR=./data/extractions/
-OUTPUT_DIR=./data/output/
-```
+The extraction agent (`agent_2b_extractor.py`) includes:
++ Retry logic with exponential backoff on Anthropic API rate-limit errors
++ Cache protection — rate-limited extractions are not written to disk, preventing corrupt cached results from blocking reruns
++ Resumable runs — already-extracted papers are skipped automatically on re-execution
 
 ---
 
@@ -188,20 +202,3 @@ openpyxl>=3.1.0
 python-dotenv>=1.0.0
 ```
 
----
-
-## Pipeline Phases
-
-| Phase | Agent | Input | Output | Verify |
-|-------|-------|-------|--------|--------|
-| 1 | `agent_0_parser` | PDFs | `parsed/*.json` | `test_parser.py` |
-| 2 | `agent_1_classifier` | Parsed JSON | `*_classification.json` | 3+ classifications |
-| 3 | `agent_2b_extractor` | Parsed + Classification | `*_extraction.json` | Missing_Handling values |
-| 4 | `agent_3_qc` | Extraction JSON | QC results + review queue | `human_review_queue.xlsx` |
-| 5 | `agent_4_exporter` | All JSON + reviewed queue | `extraction_output.xlsx` | 3-sheet Excel |
-
----
-
-*Pipeline developed for academic research purposes. All LLM calls use
-temperature=0 for deterministic extraction. Results should be validated against
-human coding for a random subsample before use in publication.*
