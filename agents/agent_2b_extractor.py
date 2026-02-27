@@ -279,9 +279,9 @@ No markdown fences.  Use "NR" or "NA" as appropriate.
 
 ## FLAGS (add to "flags_to_append" list in your JSON response)
 Include this key ONLY if triggered:
-- [FLAG-MISSING-AMBIGUOUS]: Add if Missing_Mentioned coding was genuinely uncertain
+- FLAG-MISSING-AMBIGUOUS: Add if Missing_Mentioned coding was genuinely uncertain
   (e.g. found only ambiguous phrases like "complete data" without explicit discussion).
-- [FLAG-UNUSUAL-IMPUTATION]: Add if Missing_Handling is a rare or non-standard method.
+- FLAG-UNUSUAL-IMPUTATION: Add if Missing_Handling is a rare or non-standard method.
 
 ## CODING RULES
 - If Missing_Mentioned="0", all dependent fields MUST be "NA".
@@ -328,6 +328,76 @@ _B4_FIELDS: tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+
+_RETRY_QUEUE_NAME = "_retry_queue.jsonl"
+
+def _is_rate_limit_error(exc_str: str) -> bool:
+    s = (exc_str or "").lower()
+    # Keep it simple + robust across SDK versions
+    return ("429" in s) and ("rate" in s or "too many request" in s or "status" in s or "error" in s)
+
+def _enqueue_retry(output_dir: Path, paper_id: str, flag: str, detail: str = "") -> None:
+    """
+    Append a retry record (JSONL). This survives crashes and doesn't block the run.
+    """
+    try:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        path = output_dir / _RETRY_QUEUE_NAME
+        rec = {
+            "paper_id": paper_id,
+            "flag": flag,
+            "detail": (detail or "")[:300],
+            "ts": datetime.now().isoformat(timespec="seconds"),
+        }
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        logger.warning("Could not write retry queue for %s (%s).", paper_id, exc)
+
+def _load_retry_queue_ids(extractions_dir: Path, retry_flags: list[str]) -> set[str]:
+    """
+    Return paper_ids found in _retry_queue.jsonl whose 'flag' matches any retry_flag.
+    """
+    ids: set[str] = set()
+    path = Path(extractions_dir) / _RETRY_QUEUE_NAME
+    if not path.exists():
+        return ids
+
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            rec = json.loads(line)
+            pid = str(rec.get("paper_id", "")).strip()
+            flag = str(rec.get("flag", "")).strip()
+            if not pid or not flag:
+                continue
+            if any(rf in flag for rf in retry_flags):
+                ids.add(pid)
+    except Exception as exc:
+        logger.warning("Could not read retry queue %s (%s).", path, exc)
+
+    return ids
+
+def _scan_cached_extractions_for_flags(extractions_dir: Path, retry_flags: list[str]) -> set[str]:
+    """
+    Return paper_ids whose cached *_extraction.json has Extraction_Flags containing any retry_flag substring.
+    """
+    ids: set[str] = set()
+    extractions_dir = Path(extractions_dir)
+
+    for p in sorted(extractions_dir.glob("*_extraction.json")):
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+            flags = str(d.get("Extraction_Flags", ""))
+            if any(rf in flags for rf in retry_flags):
+                ids.add(p.name.split("_extraction.json")[0])
+        except Exception:
+            continue
+
+    return ids
 
 
 def _extract_json(text: str) -> dict:
@@ -378,20 +448,10 @@ def _call_llm(
     max_tokens: int,
     paper_id: str,
     call_name: str,
-) -> "tuple[str | None, int, int, int]":
-    """Make one Anthropic API call with temperature=0.
-
-    Args:
-        client: Anthropic SDK client.
-        system: System prompt text.
-        user_msg: User-turn content.
-        max_tokens: Maximum output tokens.
-        paper_id: Used only for logging.
-        call_name: Short label for logging (e.g. "b1", "step-a").
-
-    Returns:
-        Tuple of (raw_text, input_tokens, output_tokens, duration_ms).
-        On any exception returns (None, 0, 0, duration_ms).
+) -> "tuple[str | None, int, int, int, str]":
+    """
+    Returns: (raw_text|None, input_tokens, output_tokens, duration_ms, exc_str).
+    exc_str is "" on success.
     """
     exc_str: str = ""
     t0 = time.monotonic()
@@ -412,7 +472,7 @@ def _call_llm(
             "[%s] paper_id=%s call=%s input=%d output=%d duration_ms=%d",
             ts, paper_id, call_name, in_tok, out_tok, duration_ms,
         )
-        return response.content[0].text, in_tok, out_tok, duration_ms
+        return response.content[0].text, in_tok, out_tok, duration_ms, ""
     except Exception as exc:
         exc_str = str(exc)
         duration_ms = int((time.monotonic() - t0) * 1000)
@@ -420,7 +480,8 @@ def _call_llm(
             "API error paper_id=%s call=%s duration_ms=%d: %s",
             paper_id, call_name, duration_ms, exc_str,
         )
-        return None, 0, 0, duration_ms
+        return None, 0, 0, duration_ms, exc_str
+
 
 
 def _run_b_call(
@@ -431,61 +492,64 @@ def _run_b_call(
     paper_id: str,
     fallback_fields: "tuple[str, ...]",
 ) -> "tuple[dict, str]":
-    """Run one B-step extraction call with one automatic retry on failure.
-
-    Args:
-        client: Anthropic SDK client.
-        system: System prompt for this B step.
-        user_msg: User-turn content.
-        call_name: Short label (e.g. "b1", "b2").
-        paper_id: Used for logging and error messages.
-        fallback_fields: Field names to fill with "NR" on double failure.
-
-    Returns:
-        Tuple of (result_dict, flags_string).
-        flags_string is empty on success, "[FLAG-PARSE-ERROR-{call_name}]" on double failure.
     """
-    exc_str: str = ""
+    flags_string:
+      - "" on success
+      - "FLAG-PARSE-ERROR-{call_name}" when model responded but JSON couldn't be parsed (2 attempts)
+      - "FLAG-RATE-LIMIT-{call_name}" when API was rate-limited (429) and retry also rate-limited
+      - "FLAG-API-ERROR-{call_name}" for other API failures
+    """
+    # Attempt 1
+    raw_text, _, _, _, _, exc1 = _call_llm(client, system, user_msg, 2048, paper_id, call_name)
 
-    raw_text, _, _, _ = _call_llm(client, system, user_msg, 2048, paper_id, call_name)
+    # If API failed (no text), handle rate limit vs other
+    if raw_text is None:
+        if _is_rate_limit_error(exc1):
+            logger.warning("Rate limit on %s for %s; sleeping 60s then retrying.", call_name, paper_id)
+            time.sleep(60)
+        else:
+            logger.warning("API failure on %s for %s; retrying once.", call_name, paper_id)
 
-    if raw_text is not None:
-        exc_str = ""
-        try:
-            return _extract_json(raw_text), ""
-        except ValueError as exc:
-            exc_str = str(exc)
-            logger.warning(
-                "Parse error on %s first attempt for %s: %s",
-                call_name, paper_id, exc_str,
-            )
+        raw_text2, _, _, _, _, exc2 = _call_llm(
+            client, system, user_msg, 2048, paper_id, f"{call_name}-retry"
+        )
 
-    # Retry once with JSON reminder.
-    retry_msg = (
-        "Your previous response was not valid JSON. Return JSON only:\n\n" + user_msg
-    )
-    exc_str = ""
-    raw_text2, _, _, _ = _call_llm(
-        client, system, retry_msg, 2048, paper_id, f"{call_name}-retry"
-    )
+        if raw_text2 is None:
+            if _is_rate_limit_error(exc2):
+                return {f: "NR" for f in fallback_fields}, f"FLAG-RATE-LIMIT-{call_name}"
+            return {f: "NR" for f in fallback_fields}, f"FLAG-API-ERROR-{call_name}"
 
-    if raw_text2 is not None:
-        exc_str = ""
+        # We got text on retry; parse once (no extra third call)
         try:
             return _extract_json(raw_text2), ""
         except ValueError as exc:
-            exc_str = str(exc)
-            logger.warning(
-                "Parse error on %s retry for %s: %s",
-                call_name, paper_id, exc_str,
-            )
+            logger.warning("Parse error on %s retry for %s: %s", call_name, paper_id, exc)
+            return {f: "NR" for f in fallback_fields}, f"FLAG-PARSE-ERROR-{call_name}"
 
-    # Both attempts failed.
-    logger.error(
-        "Both attempts failed for %s %s; using fallback NR values.",
-        call_name, paper_id,
+    # We got text on attempt 1; parse JSON
+    try:
+        return _extract_json(raw_text), ""
+    except ValueError as exc:
+        logger.warning("Parse error on %s first attempt for %s: %s", call_name, paper_id, exc)
+
+    # Retry once with JSON reminder
+    retry_msg = "Your previous response was not valid JSON. Return JSON only:\n\n" + user_msg
+    raw_text2, _, _, _, _, exc2 = _call_llm(
+        client, system, retry_msg, 2048, paper_id, f"{call_name}-retry"
     )
-    return {f: "NR" for f in fallback_fields}, f"[FLAG-PARSE-ERROR-{call_name}]"
+
+    if raw_text2 is None:
+        if _is_rate_limit_error(exc2):
+            return {f: "NR" for f in fallback_fields}, f"FLAG-RATE-LIMIT-{call_name}"
+        return {f: "NR" for f in fallback_fields}, f"FLAG-API-ERROR-{call_name}"
+
+    try:
+        return _extract_json(raw_text2), ""
+    except ValueError as exc:
+        logger.warning("Parse error on %s retry for %s: %s", call_name, paper_id, exc)
+
+    return {f: "NR" for f in fallback_fields}, f"FLAG-PARSE-ERROR-{call_name}"
+
 
 
 def _run_step_a(paper: ParsedPaper, client: "anthropic.Anthropic") -> dict:
@@ -510,7 +574,7 @@ def _run_step_a(paper: ParsedPaper, client: "anthropic.Anthropic") -> dict:
         if not user_msg.strip():
             return dict(_ALL_NONE)
 
-        raw_text, _, _, _ = _call_llm(
+        raw_text, _, _, _, _ = _call_llm(
             client, _STEP_A_SYSTEM_PROMPT, user_msg, 256, paper.paper_id, "step-a"
         )
         if raw_text is None:
@@ -744,12 +808,26 @@ def extract_paper(
         )
         result_obj = ExtractionResult(
             Paper_ID=paper_id,
-            Extraction_Flags=f"[FLAG-PYDANTIC-ERROR] {exc_str[:200]}",
+            Extraction_Flags=f"FLAG-PYDANTIC-ERROR {exc_str[:200]}",
             Extraction_Confidence=1,
             Time_Spent_Seconds=round(elapsed, 2),
         )
 
     # --- Save ---
+    # --- Layer 2: Do NOT save if we were rate-limited (prevents caching NR outputs) ---
+    flags_str = str(result_obj.Extraction_Flags or "")
+    if "FLAG-RATE-LIMIT-" in flags_str:
+        logger.warning(
+            "Not saving extraction for %s due to rate-limit flags: %s",
+            paper_id, flags_str
+        )
+        # Mark for retry
+        for f in all_flags:
+            if f.startswith("FLAG-RATE-LIMIT-"):
+                _enqueue_retry(output_dir, paper_id, f, detail="Skipped save due to rate-limit.")
+        return result_obj.to_dict()
+
+    # --- Save (normal path) ---
     save_exc: str = ""
     try:
         saved_path = result_obj.save(output_dir)
@@ -761,12 +839,14 @@ def extract_paper(
     return result_obj.to_dict()
 
 
+
 def extract_all_papers(
     parsed_dir: Optional[Path] = None,
     extractions_dir: Optional[Path] = None,
     api_key: Optional[str] = None,
     force: bool = False,
     eligible_codes: tuple = ("EQR", "MM"),
+    retry_flags: Optional[list[str]] = None,
 ) -> list[dict]:
     """Extract variables for all eligible papers in *parsed_dir*.
 
@@ -818,6 +898,20 @@ def extract_all_papers(
         return []
 
     client = anthropic_lib.Anthropic(api_key=api_key)
+    
+    # If retry_flags is set, only rerun affected paper_ids and force re-extraction.
+    target_ids: Optional[set[str]] = None
+    if retry_flags:
+        retry_flags = [str(x).strip() for x in retry_flags if str(x).strip()]
+        target_ids = set()
+        target_ids |= _scan_cached_extractions_for_flags(extractions_dir, retry_flags)
+        target_ids |= _load_retry_queue_ids(extractions_dir, retry_flags)
+
+        if not target_ids:
+            logger.warning("retry_flags provided but no matching papers found: %s", retry_flags)
+            return []
+        logger.info("Retry mode: rerunning %d paper(s) for flags=%s", len(target_ids), retry_flags)
+    
     results: list[dict] = []
 
     for jf in json_files:
@@ -855,7 +949,13 @@ def extract_all_papers(
             logger.error("Cannot load ParsedPaper from %s: %s", jf, load_exc)
             continue
 
-        result = extract_paper(paper, client, output_dir=extractions_dir, force=force)
+        if target_ids is not None and paperid not in target_ids:
+            continue
+
+        # In retry mode, always force re-extraction even if cache exists.
+        effective_force = True if target_ids is not None else force
+        result = extract_paper(paper, client, output_dir=extractions_dir, force=effective_force)        
+        
         results.append(result)
 
     return results
@@ -926,6 +1026,12 @@ if __name__ == "__main__":
         type=Path,
         default=None,
         help="Override the extractions output directory.",
+    )  
+    parser.add_argument(
+    "--retry-flags",
+    nargs="*",
+    default=None,
+    help="Rerun only papers affected by these flags (e.g. FLAG-PARSE-ERROR-b4 FLAG-RATE-LIMIT-b4).",
     )
     args = parser.parse_args()
 
@@ -933,6 +1039,7 @@ if __name__ == "__main__":
         parsed_dir=args.parsed_dir,
         extractions_dir=args.extractions_dir,
         force=args.force,
+        retry_flags=args.retry_flags,
     )
 
     if results:

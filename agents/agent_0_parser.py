@@ -69,9 +69,20 @@ _SECTION_PATTERNS: list[Tuple[str, re.Pattern]] = [
     (
         "methods_data",
         re.compile(
-            r"^\s*(?:\d+[\.\s]+)?(?:data|method(?:s|ology)?|empirical\s+(?:strategy|analysis)|"
-            r"research\s+design|sample|measures?|variables?|model|estimation|"
-            r"data\s+and\s+methods?|methods?\s+and\s+data)\s*$",
+            r"^\s*(?:\d+[\.\s]+)?(?:data|method(?:s|ology)?|empirical\s+(?:strategy|analysis|approach)|"
+            r"research\s+design|sample(?:\s+and\s+data)?|measures?|variables?|model|estimation|"
+            r"data\s+and\s+methods?|methods?\s+and\s+data|"
+            r"identification(?:\s+strategy)?|"
+            r"data\s+and\s+sample|"
+            r"data\s+sources?|"
+            r"econometric\s+(?:framework|approach|model|strategy)|"
+            r"causal\s+(?:strategy|inference|identification)|"
+            r"robustness(?:\s+checks?)?|"
+            r"additional\s+analyses|"
+            r"(?:regression|panel)\s+(?:specification|framework)|"
+            r"instrument(?:al\s+variable)?s?|"
+            r"difference[- ]in[- ]differences?"
+            r")\s*$",
             re.IGNORECASE,
         ),
     ),
@@ -449,16 +460,24 @@ def parse_pdf(pdf_path: Path | str, output_dir: Optional[Path] = None) -> Parsed
     # ------------------------------------------------------------------
     # Step 5: Assemble and persist
     # ------------------------------------------------------------------
+    _methods_raw  = sections.get("methods_data", "")
+    _results_raw  = sections.get("results", "")
+    _footnotes_raw = sections.get("footnotes", "")
+
+    # Layer 1 fallback: if section too short or non-existent, pass full text
+    _methods_final   = _methods_raw  if len(_methods_raw)  >= 500 else full_text
+    _results_final   = _results_raw  if len(_results_raw)  >= 500 else full_text
+    _footnotes_final = _footnotes_raw if len(_footnotes_raw) >= 200 else ""
     paper = ParsedPaper(
         paper_id=paper_id,
         title=title,
         authors=authors,
         abstract=sections.get("abstract", ""),
         theory_hypotheses=sections.get("theory_hypotheses", ""),
-        methods_data=sections.get("methods_data", ""),
-        results=sections.get("results", ""),
+        methods_data=_methods_final,
+        results=_results_final,
         discussion=sections.get("discussion", ""),
-        footnotes=sections.get("footnotes", ""),
+        footnotes=_footnotes_final,
         appendix=sections.get("appendix", ""),
         full_text=full_text,
         page_count=page_count,

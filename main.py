@@ -40,7 +40,7 @@ logging.basicConfig(
 )
 
 
-def main() -> None:
+def main(retry_flags: list[str] | None = None) -> None:
     """Run the full 5-phase extraction pipeline."""
 
     # ------------------------------------------------------------------
@@ -83,6 +83,7 @@ def main() -> None:
         parsed_dir=config.PARSED_DIR,
         extractions_dir=config.EXTRACTIONS_DIR,
         api_key=config.ANTHROPIC_API_KEY,
+        retry_flags=retry_flags,
     )
 
     # ------------------------------------------------------------------
@@ -111,4 +112,15 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run the full paper extraction pipeline.")
+    parser.add_argument(
+        "--retry-flags",
+        nargs="*",
+        default=None,
+        help="Only rerun Phase 3 extraction for papers affected by these flags (e.g. FLAG-PARSE-ERROR-b4).",
+    )
+    args = parser.parse_args()
+
+    main(retry_flags=args.retry_flags)
